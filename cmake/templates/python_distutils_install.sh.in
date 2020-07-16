@@ -1,4 +1,4 @@
-#!/bin/sh -x
+#!/bin/sh
 
 if [ -n "$DESTDIR" ] ; then
     case $DESTDIR in
@@ -12,13 +12,17 @@ if [ -n "$DESTDIR" ] ; then
     DESTDIR_ARG="--root=$DESTDIR"
 fi
 
-cd "@INSTALL_CMD_WORKING_DIRECTORY@"
+echo_and_run() { echo "+ $@" ; "$@" ; }
 
-# todo --install-layout=deb per platform
+echo_and_run cd "@INSTALL_CMD_WORKING_DIRECTORY@"
+
+# ensure that Python install destination exists
+echo_and_run mkdir -p "$DESTDIR@CMAKE_INSTALL_PREFIX@/@PYTHON_INSTALL_DIR@"
+
 # Note that PYTHONPATH is pulled from the environment to support installing
 # into one location when some dependencies were installed in another
 # location, #123.
-/usr/bin/env \
+echo_and_run /usr/bin/env \
     PYTHONPATH="@CMAKE_INSTALL_PREFIX@/@PYTHON_INSTALL_DIR@:@CMAKE_BINARY_DIR@/@PYTHON_INSTALL_DIR@:$PYTHONPATH" \
     CATKIN_BINARY_DIR="@CMAKE_BINARY_DIR@" \
     "@PYTHON_EXECUTABLE@" \
@@ -26,4 +30,4 @@ cd "@INSTALL_CMD_WORKING_DIRECTORY@"
     build --build-base "@CMAKE_CURRENT_BINARY_DIR@" \
     install \
     $DESTDIR_ARG \
-    @SETUPTOOLS_ARG_EXTRA@ --prefix=@CMAKE_INSTALL_PREFIX@ --install-scripts=@CMAKE_INSTALL_PREFIX@/@CATKIN_GLOBAL_BIN_DESTINATION@
+    @SETUPTOOLS_ARG_EXTRA@ --prefix="@CMAKE_INSTALL_PREFIX@" --install-scripts="@CMAKE_INSTALL_PREFIX@/@CATKIN_GLOBAL_BIN_DESTINATION@"

@@ -59,9 +59,7 @@ def generate_environment_script(env_script):
     # fetch environment after calling setup
     python_code = 'import os; print(dict(os.environ))'
     output = subprocess.check_output([env_script, sys.executable, '-c', python_code])
-    if sys.stdout.encoding:
-        output = output.decode(sys.stdout.encoding)
-    env_after = ast.literal_eval(output)
+    env_after = ast.literal_eval(output.decode('utf8'))
 
     # calculate added and modified environment variables
     added = {}
@@ -114,7 +112,6 @@ def _append_comment(code, value):
 
 def _set_variable(code, key, value):
     if _is_not_windows():
-        export_command = 'export'
+        code.append('export %s="%s"' % (key, value))
     else:
-        export_command = 'set'
-    code.append('%s %s="%s"' % (export_command, key, value))
+        code.append('set %s=%s' % (key, value))

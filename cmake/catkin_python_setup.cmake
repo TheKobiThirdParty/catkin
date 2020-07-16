@@ -20,8 +20,6 @@ function(catkin_python_setup)
     message(FATAL_ERROR "catkin_python_setup() called with unused arguments: ${ARGN}")
   endif()
 
-  # mark that catkin_python_setup() was called in order to disable installation of generated __init__.py files in generate_messages() and generate_dynamic_reconfigure_options()
-  set(${PROJECT_NAME}_CATKIN_PYTHON_SETUP TRUE PARENT_SCOPE)
   if(${PROJECT_NAME}_GENERATE_MESSAGES)
     message(FATAL_ERROR "generate_messages() must be called after catkin_python_setup() in project '${PROJECT_NAME}'")
   endif()
@@ -35,7 +33,7 @@ function(catkin_python_setup)
 
   assert(PYTHON_INSTALL_DIR)
   set(INSTALL_CMD_WORKING_DIRECTORY ${${PROJECT_NAME}_SOURCE_DIR})
-  if(NOT MSVC)
+  if(NOT WIN32)
     set(INSTALL_SCRIPT
       ${CMAKE_CURRENT_BINARY_DIR}/catkin_generated/python_distutils_install.sh)
     configure_file(${catkin_EXTRAS_DIR}/templates/python_distutils_install.sh.in
@@ -87,6 +85,11 @@ function(catkin_python_setup)
     math(EXPR pkgs_range "${pkgs_count} - 1")
     foreach(index RANGE ${pkgs_range})
       list(GET ${PROJECT_NAME}_SETUP_PY_PACKAGES ${index} pkg)
+      if("${pkg}" STREQUAL "${PROJECT_NAME}")
+        # mark that catkin_python_setup() was called and the setup.py file contains a package with the same name as the current project
+        # in order to disable installation of generated __init__.py files in generate_messages() and generate_dynamic_reconfigure_options()
+        set(${PROJECT_NAME}_CATKIN_PYTHON_SETUP_HAS_PACKAGE_INIT TRUE PARENT_SCOPE)
+      endif()
       list(GET ${PROJECT_NAME}_SETUP_PY_PACKAGE_DIRS ${index} pkg_dir)
       get_filename_component(name ${pkg_dir} NAME)
       if(NOT ("${pkg}" STREQUAL "${name}"))
@@ -100,6 +103,37 @@ function(catkin_python_setup)
     endforeach()
   endif()
 
+  # generate relay-script for each python module (and __init__.py files) if available
+  if(${PROJECT_NAME}_SETUP_PY_MODULES)
+    list(LENGTH ${PROJECT_NAME}_SETUP_PY_MODULES modules_count)
+    math(EXPR modules_range "${modules_count} - 1")
+    foreach(index RANGE ${modules_range})
+      list(GET ${PROJECT_NAME}_SETUP_PY_MODULES ${index} module)
+      list(GET ${PROJECT_NAME}_SETUP_PY_MODULE_DIRS ${index} module_dir)
+      set(PYTHON_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/${module_dir}/${module})
+      if(EXISTS ${PYTHON_SCRIPT})
+        get_filename_component(path ${module} PATH)
+        file(MAKE_DIRECTORY "${CATKIN_DEVEL_PREFIX}/${CATKIN_GLOBAL_PYTHON_DESTINATION}/${path}")
+        configure_file(${catkin_EXTRAS_DIR}/templates/relay.py.in
+          ${CATKIN_DEVEL_PREFIX}/${CATKIN_GLOBAL_PYTHON_DESTINATION}/${module}
+          @ONLY)
+        # relay parent __init__.py files if they exist
+        while(NOT "${path}" STREQUAL "")
+          set(PYTHON_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/${module_dir}/${path}/__init__.py)
+          if(EXISTS ${PYTHON_SCRIPT})
+            file(MAKE_DIRECTORY "${CATKIN_DEVEL_PREFIX}/${CATKIN_GLOBAL_PYTHON_DESTINATION}/${path}")
+            configure_file(${catkin_EXTRAS_DIR}/templates/relay.py.in
+              ${CATKIN_DEVEL_PREFIX}/${CATKIN_GLOBAL_PYTHON_DESTINATION}/${path}/__init__.py
+              @ONLY)
+          else()
+            message(WARNING "The module '${module_dir}/${module}' lacks an '__init__.py' file in the parent folder '${module_dir}/${path}' in project '${PROJECT_NAME}'")
+          endif()
+          get_filename_component(path ${path} PATH)
+        endwhile()
+      endif()
+    endforeach()
+  endif()
+
    # generate relay-script for each python script
   foreach(script ${${PROJECT_NAME}_SETUP_PY_SCRIPTS})
     get_filename_component(name ${script} NAME)
@@ -107,7 +141,7 @@ function(catkin_python_setup)
       message(FATAL_ERROR "The script '${name}' as listed in 'setup.py' of '${PROJECT_NAME}' doesn't exist")
     endif()
     set(PYTHON_SCRIPT ${CMAKE_CURRENT_SOURCE_DIR}/${script})
-    configure_file(${catkin_EXTRAS_DIR}/templates/script.py.in
+    atomic_configure_file(${catkin_EXTRAS_DIR}/templates/script.py.in
       ${CATKIN_DEVEL_PREFIX}/${CATKIN_GLOBAL_BIN_DESTINATION}/${name}
       @ONLY)
   endforeach()

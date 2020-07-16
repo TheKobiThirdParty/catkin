@@ -1,3 +1,5 @@
+_generate_function_if_testing_is_disabled("catkin_add_nosetests")
+
 #
 # Add Python nose tests.
 #
@@ -6,7 +8,7 @@
 # .. note:: The test can be executed by calling ``nosetests``
 #   directly or using:
 #   `` make run_tests_${PROJECT_NAME}_nosetests_${dir}``
-#   (where slashes in the ``dir`` are replaced with underscores)
+#   (where slashes in the ``dir`` are replaced with periods)
 #
 # :param path: a relative or absolute directory to search for
 #   nosetests in or a relative or absolute file containing tests
@@ -18,12 +20,15 @@
 #   (default: 60)
 # :type TIMEOUT: integer
 # :param WORKING_DIRECTORY: the working directory when executing the
-#   tests
+#   tests (this option can only be used when the ``path`` argument is a
+#   file  but not when it is a directory)
 # :type WORKING_DIRECTORY: string
 #
 # @public
 #
 function(catkin_add_nosetests path)
+  _warn_if_skip_testing("catkin_add_nosetests")
+
   if(NOT NOSETESTS)
     message(STATUS "skipping nosetests(${path}) in project '${PROJECT_NAME}'")
     return()
@@ -55,43 +60,62 @@ function(catkin_add_nosetests path)
     set(_covarg " --with-coverage")
   endif()
 
-  # strip PROJECT_BINARY_DIR from output_file_name
+  # strip PROJECT_SOURCE_DIR and PROJECT_BINARY_DIR prefix from output_file_name
   set(output_file_name ${path})
-  string(LENGTH "${PROJECT_BINARY_DIR}/" prefix_length)
-  string(LENGTH "${output_file_name}" var_length)
-  if(${var_length} GREATER ${prefix_length})
-    string(SUBSTRING "${output_file_name}" 0 ${prefix_length} var_prefix)
-    if("${var_prefix}" STREQUAL "${PROJECT_BINARY_DIR}/")
-      # passing length -1 does not work for CMake < 2.8.5
-      # http://public.kitware.com/Bug/view.php?id=10740
-      string(LENGTH "${output_file_name}" _rest)
-      math(EXPR _rest "${_rest} - ${prefix_length}")
-      string(SUBSTRING "${output_file_name}" ${prefix_length} ${_rest} output_file_name)
-    endif()
+  _strip_path_prefix(output_file_name "${output_file_name}" "${PROJECT_SOURCE_DIR}")
+  _strip_path_prefix(output_file_name "${output_file_name}" "${PROJECT_BINARY_DIR}")
+  if("${output_file_name}" STREQUAL "")
+    set(output_file_name ".")
   endif()
   string(REPLACE "/" "." output_file_name ${output_file_name})
+  string(REPLACE ":" "." output_file_name ${output_file_name})
 
   set(output_path ${CATKIN_TEST_RESULTS_DIR}/${PROJECT_NAME})
+  # make --xunit-file argument an absolute path (https://github.com/nose-devs/nose/issues/779)
+  get_filename_component(output_path "${output_path}" ABSOLUTE)
   set(cmd "${CMAKE_COMMAND} -E make_directory ${output_path}")
   if(IS_DIRECTORY ${_path_name})
     set(tests "--where=${_path_name}")
   else()
     set(tests "${_path_name}")
   endif()
-  set(cmd ${cmd} "${NOSETESTS} --process-timeout=${_nose_TIMEOUT} ${tests} --with-xunit --xunit-file=${output_path}/nosetests-${output_file_name}.xml${_covarg}")
+  set(cmd ${cmd} "${NOSETESTS} -P --process-timeout=${_nose_TIMEOUT} ${tests} --with-xunit --xunit-file=${output_path}/nosetests-${output_file_name}.xml${_covarg}")
   catkin_run_tests_target("nosetests" ${output_file_name} "nosetests-${output_file_name}.xml" COMMAND ${cmd} DEPENDENCIES ${_nose_DEPENDENCIES} WORKING_DIRECTORY ${_nose_WORKING_DIRECTORY})
 endfunction()
 
-function(add_nosetests)
-  message(WARNING "add_nosetests() is deprecated, please rename the function call to catkin_add_nosetests()")
-  catkin_add_nosetests(${ARGN})
-endfunction()
+find_program(NOSETESTS NAMES
+  "nosetests${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}"
+  "nosetests-${PYTHON_VERSION_MAJOR}.${PYTHON_VERSION_MINOR}"
+  "nosetests${PYTHON_VERSION_MAJOR}"
+  "nosetests-${PYTHON_VERSION_MAJOR}"
+  "nosetests")
+if(NOSETESTS)
+  message(STATUS "Using Python nosetests: ${NOSETESTS}")
+else()
+  if("${PYTHON_VERSION_MAJOR}" STREQUAL "3")
+    message(STATUS "nosetests not found, Python tests can not be run (try installing package 'python3-nose')")
+  else()
+    message(STATUS "nosetests not found, Python tests can not be run (try installing package 'python-nose')")
+  endif()
+endif()
 
-find_program(NOSETESTS nosetests)
-if(NOT nosetests_path)
-  # retry with name including major version number
-  find_program(NOSETESTS nosetests2)
-endif()
-if(NOT NOSETESTS)
-  message(WARNING "nosetests not found, Python tests can not be run (try installing package 'python-nose')")
-endif()
+function(_strip_path_prefix var value prefix)
+  if("${value}" STREQUAL "${prefix}" OR "${value}" STREQUAL "${prefix}/")
+    set(${var} "" PARENT_SCOPE)
+  else()
+    set(result "${value}")
+    string(LENGTH "${prefix}/" prefix_length)
+    string(LENGTH "${value}" var_length)
+    if(${var_length} GREATER ${prefix_length})
+      string(SUBSTRING "${value}" 0 ${prefix_length} var_prefix)
+      if("${var_prefix}" STREQUAL "${prefix}/")
+        # passing length -1 does not work for CMake < 2.8.5
+        # http://public.kitware.com/Bug/view.php?id=10740
+        string(LENGTH "${value}" _rest)
+        math(EXPR _rest "${_rest} - ${prefix_length}")
+        string(SUBSTRING "${value}" ${prefix_length} ${_rest} result)
+      endif()
+    endif()
+    set(${var} "${result}" PARENT_SCOPE)
+  endif()
+endfunction()

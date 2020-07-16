@@ -15,6 +15,7 @@ import catkin_sphinx
 import os
 import sys
 import subprocess
+import time
 from xml.etree.ElementTree import ElementTree
 
 # -- General configuration -----------------------------------------------------
@@ -47,14 +48,6 @@ master_doc = 'index'
 
 # General information about the project.
 project = u'catkin'
-gitcmd = 'git log -n1 --pretty=format:%cD'.split()
-
-lastmod = subprocess.Popen(gitcmd, stdout=subprocess.PIPE).communicate()[0]
-dochash = subprocess.Popen('git log -n1 --pretty=format:%H'.split(),
-                           stdout=subprocess.PIPE).communicate()[0]
-
-print "dochash=", dochash
-copyright = u'2010, Willow Garage -- ' + ' Version ' + dochash + ", " + ' '.join(lastmod.split(' ')[:4])
 
 # The version info for the project you're documenting, acts as replacement for
 # |version| and |release|, also used in various other places throughout the
@@ -62,8 +55,10 @@ copyright = u'2010, Willow Garage -- ' + ' Version ' + dochash + ", " + ' '.join
 try:
     root = ElementTree(None, os.path.join('..', 'package.xml'))
     version = root.findtext('version')
+    author_names = [a.text for a in root.findall('author')]
+    copyright = u'2010-%s, %s' % (time.strftime('%Y'), ', '.join(author_names))
 except Exception as e:
-    raise RuntimeError('Could not extract version from package.xml:\n%s' % e)
+    raise RuntimeError('Could not extract version and authors from package.xml:\n%s' % e)
 
 # The full version, including alpha/beta/rc tags.
 release = version
@@ -81,9 +76,9 @@ release = version
 # List of documents that shouldn't be included in the build.
 #unused_docs = []
 
-# List of directories, relative to source directory, that shouldn't be searched
-# for source files.
-exclude_trees = []
+# List of patterns, relative to source directory, that match files and
+# directories to ignore when looking for source files.
+exclude_patterns = []
 
 # The reST default role (used for this markup: `text`) to use for all documents.
 #default_role = None
@@ -140,7 +135,7 @@ html_logo = 'ros.png'
 # Add any paths that contain custom static files (such as style sheets) here,
 # relative to this directory. They are copied after the builtin static files,
 # so a file named "default.css" will overwrite the builtin "default.css".
-html_static_path = ['_static']
+##html_static_path = ['_static']
 
 # If not '', a 'Last updated on:' timestamp is inserted at every page bottom,
 # using the given strftime format.
@@ -195,8 +190,8 @@ htmlhelp_basename = 'catkin-cmakedoc'
 # Grouping the document tree into LaTeX files. List of tuples
 # (source start file, target name, title, author, documentclass [howto/manual]).
 latex_documents = [
-  ('index', 'catkin.tex', ur'Catkin',
-   ur'troy d. straszheim', 'manual'),
+  ('index', 'catkin.tex', r'Catkin',
+   r'troy d. straszheim', 'manual'),
 ]
 
 # The name of an image file (relative to this directory) to place at the top of
@@ -217,11 +212,11 @@ latex_documents = [
 #latex_use_modindex = True
 
 intersphinx_mapping = {
-    'genmsg': ('http://ros.org/doc/api/genmsg/html', None),
-    'vcstools': ('http://ros.org/doc/api/vcstools/html', None),
-    'rosinstall': ('http://ros.org/doc/api/rosinstall/html', None),
-    'rospkg': ('http://ros.org/doc/api/rospkg/html', None),
-    'rosdep2': ('http://ros.org/doc/api/rosdep2/html', None),
+    'genmsg': ('http://docs.ros.org/indigo/api/genmsg/html', None),
+    'vcstools': ('http://docs.ros.org/independent/api/vcstools/html', None),
+    'rosinstall': ('http://docs.ros.org/independent/api/rosinstall/html', None),
+    'rospkg': ('http://docs.ros.org/independent/api/rospkg/html', None),
+    'rosdep': ('http://docs.ros.org/independent/api/rosdep/html', None),
     }
 
 

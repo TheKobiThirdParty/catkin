@@ -9,22 +9,25 @@ For inspiration, look at the guideline examples here:
 `CMake Style recommendations <http://www.cmake.org/cgi-bin/viewcvs.cgi/Modules/readme.txt?root=CMake&view=markup>`_
 `KDE cmake coding guidelines <http://techbase.kde.org/Policies/CMake_Coding_Style>`_
 
-**Call catkin_package early**
+**Call catkin_package before any targets**
 
-The following line should always appear like this in this order
-without other commands in between::
+The following lines must always appear the CMakeLists.txt in this order::
 
   cmake_minimum_required(VERSION 2.8.3)
   project(myproject)
   find_package(catkin REQUIRED <COMPONENTS ...>)
   catkin_package(<...>)
 
+While there might be additional function calls before catkin_package()
+(e.g. for finding other libraries or generating messages)
+it must be invoked before any targets are added.
+
 **Use ${PROJECT_NAME} wherever possible**
 
 Use ``${PROJECT_NAME}`` for global variables, targets and labels instead of
 repeating the project name manually or using fixed names.
 
-You can use ${PROJECT_NAME} as prefix for global variable names as well, as shown in examples below. Variables become global if they are set using the CACHED  argument or created using the option() macro.
+You can use ${PROJECT_NAME} as prefix for global variable names as well, as shown in examples below. Variables become global if they are set using the CACHE argument or created using the option() macro.
 
 After you defined your project name like this::
 
@@ -34,7 +37,7 @@ dont do this::
 
   catkin_add_gtest(test ...)
   add_executable(myproject ...)
-  set(use_feature 42 CACHED STRING "description")
+  set(use_feature 42 CACHE STRING "description")
   option(use_feature "on or off" OFF)
   macro(xyz) ...
 
@@ -42,7 +45,7 @@ do this instead::
 
   catkin_add_gtest(${PROJECT_NAME}_test ...)
   add_executable(${PROJECT_NAME} ...)
-  set(${PROJECT_NAME}_use_feature 42 CACHED STRING "description")
+  set(${PROJECT_NAME}_use_feature 42 CACHE STRING "description")
   option(${PROJECT_NAME}_use_feature "on or off" OFF)
   macro(${PROJECT_NAME}_xyz) ...
 
@@ -131,7 +134,6 @@ Do not set
 
 * CMAKE_CXX_FLAGS
 * CMAKE_FIND_ROOT_PATH
-* CMAKE_MODULE_PATH
 
 **Conditions and Variables**
 

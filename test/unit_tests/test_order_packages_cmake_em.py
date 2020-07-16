@@ -22,9 +22,11 @@ class OrderPackagesEmTest(unittest.TestCase):
         result = em.expand(template, gdict,
                            source_root_dir='/tmp/nowhere_dir',
                            whitelisted_packages=[],
-                           blacklisted_packages=[])
+                           blacklisted_packages=[],
+                           underlay_workspaces=[])
         self.assertTrue('set(CATKIN_ORDERED_PACKAGES "")' in result, result)
         self.assertTrue('set(CATKIN_ORDERED_PACKAGE_PATHS "")' in result, result)
         self.assertTrue('set(CATKIN_ORDERED_PACKAGES_IS_META "")' in result, result)
+        self.assertTrue('set(CATKIN_ORDERED_PACKAGES_BUILD_TYPE "")' in result, result)
         self.assertTrue('set(CATKIN_MESSAGE_GENERATORS' in result, result)
-        self.assertEqual(7, len(result.splitlines()))
+        self.assertEqual(10, len(result.splitlines()))

@@ -34,6 +34,7 @@
 
 from __future__ import print_function
 import os
+import runpy
 import sys
 
 import distutils.core
@@ -76,14 +77,14 @@ def _get_locations(pkgs, package_dir):
                 if key in package_dir:
                     locations[key] = package_dir[key]
                 elif parent_location is not None:
-                    locations[key] = parent_location
+                    locations[key] = os.path.join(parent_location, splits[key_len])
                 else:
-                    locations[key] = allprefix
+                    locations[key] = os.path.join(allprefix, key)
             parent_location = locations[key]
     return locations
 
 
-def generate_cmake_file(package_name, version, scripts, package_dir, pkgs):
+def generate_cmake_file(package_name, version, scripts, package_dir, pkgs, modules):
     """
     Generates lines to add to a cmake file which will set variables
 
@@ -91,6 +92,7 @@ def generate_cmake_file(package_name, version, scripts, package_dir, pkgs):
     :param scripts: [list of str]: relative paths to scripts
     :param package_dir: {modulename: path}
     :pkgs: [list of str] python_packages declared in catkin package
+    :modules: [list of str] python modules
     """
     prefix = '%s_SETUP_PY' % package_name
     result = []
@@ -115,20 +117,38 @@ def generate_cmake_file(package_name, version, scripts, package_dir, pkgs):
         if splits[1] in ['msg', 'srv']:
             continue
         # check every child has the same root folder as its parent
-        parent_name = '.'.join(splits[:1])
-        if location != locations[parent_name]:
+        root_name = splits[0]
+        root_location = location
+        for _ in range(len(splits) - 1):
+            root_location = os.path.dirname(root_location)
+        if root_location != locations[root_name]:
             raise RuntimeError(
-                "catkin_export_python does not support setup.py files that combine across multiple directories: %s in %s, %s in %s" % (pkgname, location, parent_name, locations[parent_name]))
+                "catkin_export_python does not support setup.py files that combine across multiple directories: %s in %s, %s in %s" % (pkgname, location, root_name, locations[root_name]))
 
     # If checks pass, remove all submodules
     pkgs = [p for p in pkgs if '.' not in p]
 
     resolved_pkgs = []
     for pkg in pkgs:
-        resolved_pkgs += [os.path.join(locations[pkg], pkg)]
+        resolved_pkgs += [locations[pkg]]
 
     result.append(r'set(%s_PACKAGES "%s")' % (prefix, ';'.join(pkgs)))
     result.append(r'set(%s_PACKAGE_DIRS "%s")' % (prefix, ';'.join(resolved_pkgs).replace("\\", "/")))
+
+    # skip modules which collide with package names
+    filtered_modules = []
+    for modname in modules:
+        splits = modname.split('.')
+        # check all parents too
+        equals_package = [('.'.join(splits[:-i]) in locations) for i in range(len(splits))]
+        if any(equals_package):
+            continue
+        filtered_modules.append(modname)
+    module_locations = _get_locations(filtered_modules, package_dir)
+
+    result.append(r'set(%s_MODULES "%s")' % (prefix, ';'.join(['%s.py' % m.replace('.', '/') for m in filtered_modules])))
+    result.append(r'set(%s_MODULE_DIRS "%s")' % (prefix, ';'.join([module_locations[m] for m in filtered_modules]).replace("\\", "/")))
+
     return result
 
 
@@ -155,16 +175,15 @@ def _create_mock_setup_function(package_name, outfile):
 
         pkgs = kwargs.get('packages', [])
         scripts = kwargs.get('scripts', [])
+        modules = kwargs.get('py_modules', [])
 
         unsupported_args = [
-            'data_files',
             'entry_points',
             'exclude_package_data',
             'ext_modules ',
             'ext_package',
             'include_package_data',
             'namespace_packages',
-            'py_modules',
             'setup_requires',
             'use_2to3',
             'zip_safe']
@@ -176,7 +195,8 @@ def _create_mock_setup_function(package_name, outfile):
                                      version=version,
                                      scripts=scripts,
                                      package_dir=package_dir,
-                                     pkgs=pkgs)
+                                     pkgs=pkgs,
+                                     modules=modules)
         with open(outfile, 'w') as out:
             out.write('\n'.join(result))
 
@@ -221,8 +241,7 @@ def main():
         except NameError:
             pass
 
-        with open(args.setupfile_path, 'r') as fh:
-            exec(fh.read())
+        runpy.run_path(args.setupfile_path)
     finally:
         distutils.core.setup = distutils_backup
         try:

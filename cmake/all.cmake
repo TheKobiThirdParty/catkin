@@ -16,32 +16,43 @@ else()
 endif()
 message(STATUS "Using CATKIN_DEVEL_PREFIX: ${CATKIN_DEVEL_PREFIX}")
 
-# create workspace marker
-set(_sourcespaces "${CMAKE_SOURCE_DIR}")
-if(EXISTS "${CATKIN_DEVEL_PREFIX}/.catkin")
-  # prepend to existing list of sourcespaces
-  file(READ "${CATKIN_DEVEL_PREFIX}/.catkin" _existing_sourcespaces)
-  list(FIND _existing_sourcespaces "${CMAKE_SOURCE_DIR}" _index)
-  if(_index EQUAL -1)
-    list(INSERT _existing_sourcespaces 0 ${CMAKE_SOURCE_DIR})
-  endif()
-  set(_sourcespaces ${_existing_sourcespaces})
-endif()
-file(WRITE "${CATKIN_DEVEL_PREFIX}/.catkin" "${_sourcespaces}")
+# update develspace marker file with a reference to this sourcespace
+set(_catkin_marker_file "${CATKIN_DEVEL_PREFIX}/.catkin")
 
+# check if the develspace marker file exists yet
+if(EXISTS ${_catkin_marker_file})
+  file(READ ${_catkin_marker_file} _existing_sourcespaces)
+  if(_existing_sourcespaces STREQUAL "")
+    # write this sourcespace to the marker file
+    file(WRITE ${_catkin_marker_file} "${CMAKE_SOURCE_DIR}")
+  else()
+    # append to existing list of sourcespaces if it's not in the list
+    list(FIND _existing_sourcespaces "${CMAKE_SOURCE_DIR}" _existing_sourcespace_index)
+    if(_existing_sourcespace_index EQUAL -1)
+      file(APPEND ${_catkin_marker_file} ";${CMAKE_SOURCE_DIR}")
+    endif()
+  endif()
+else()
+  # create a new develspace marker file
+  # NOTE: extra care must be taken when running multiple catkin jobs in parallel 
+  #       so that this does not overwrite the result of a similar call in another package
+  file(WRITE ${_catkin_marker_file} "${CMAKE_SOURCE_DIR}")
+endif()
 
 # use either CMAKE_PREFIX_PATH explicitly passed to CMake as a command line argument
 # or CMAKE_PREFIX_PATH from the environment
 if(NOT DEFINED CMAKE_PREFIX_PATH)
   if(NOT "$ENV{CMAKE_PREFIX_PATH}" STREQUAL "")
-    string(REPLACE ":" ";" CMAKE_PREFIX_PATH $ENV{CMAKE_PREFIX_PATH})
+    if(NOT WIN32)
+      string(REPLACE ":" ";" CMAKE_PREFIX_PATH $ENV{CMAKE_PREFIX_PATH})
+    else()
+      set(CMAKE_PREFIX_PATH $ENV{CMAKE_PREFIX_PATH})
+    endif()
   endif()
 endif()
-if(CMAKE_PREFIX_PATH)
-  # skip devel space if it is in CMAKE_PREFIX_PATH so that it is not part of CATKIN_WORKSPACES
-  list(REMOVE_ITEM CMAKE_PREFIX_PATH ${CATKIN_DEVEL_PREFIX})
-  message(STATUS "Using CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
-endif()
+message(STATUS "Using CMAKE_PREFIX_PATH: ${CMAKE_PREFIX_PATH}")
+# store original CMAKE_PREFIX_PATH
+set(CMAKE_PREFIX_PATH_AS_IS ${CMAKE_PREFIX_PATH})
 
 # list of unique catkin workspaces based on CMAKE_PREFIX_PATH
 set(CATKIN_WORKSPACES "")
@@ -57,11 +68,21 @@ if(CATKIN_WORKSPACES)
   message(STATUS "This workspace overlays: ${CATKIN_WORKSPACES}")
 endif()
 
-# save original CMAKE_PREFIX_PATH for environment generation
-set(CMAKE_PREFIX_PATH_WITHOUT_DEVEL_SPACE ${CMAKE_PREFIX_PATH})
-
 # prepend devel space to CMAKE_PREFIX_PATH
-list(INSERT CMAKE_PREFIX_PATH 0 ${CATKIN_DEVEL_PREFIX})
+list(FIND CMAKE_PREFIX_PATH ${CATKIN_DEVEL_PREFIX} _index)
+if(_index EQUAL -1)
+  list(INSERT CMAKE_PREFIX_PATH 0 ${CATKIN_DEVEL_PREFIX})
+endif()
+
+# set CATKIN_INSTALL_INTO_PREFIX_ROOT based on CATKIN_BUILD_BINARY_PACKAGE
+# if not defined already
+if(NOT DEFINED CATKIN_INSTALL_INTO_PREFIX_ROOT)
+  if(CATKIN_BUILD_BINARY_PACKAGE)
+    set(CATKIN_INSTALL_INTO_PREFIX_ROOT FALSE)
+  else()
+    set(CATKIN_INSTALL_INTO_PREFIX_ROOT TRUE)
+  endif()
+endif()
 
 
 # enable all new policies (if available)
@@ -101,11 +122,18 @@ include(CMakeParseArguments)
 # python-integration: catkin_python_setup.cmake, interrogate_setup_dot_py.py, templates/__init__.py.in, templates/script.py.in, templates/python_distutils_install.bat.in, templates/python_distutils_install.sh.in, templates/safe_execute_install.cmake.in
 foreach(filename
     assert
+    atomic_configure_file
     catkin_add_env_hooks
     catkin_destinations
+    catkin_download
     catkin_generate_environment
+    catkin_install_python
+    catkin_libraries
+    catkin_metapackage
     catkin_package
     catkin_package_xml
+    custom_install # required by catkin_symlink_install and test/gtest
+    catkin_symlink_install
     catkin_workspace
     debug_message
     em_expand
@@ -113,18 +141,19 @@ foreach(filename
     empy
     find_program_required
     legacy
+    list_append_deduplicate
     list_append_unique
     list_insert_in_workspace_order
-    parse_arguments
     safe_execute_process
     stamp
+    string_starts_with
     platform/lsb
     platform/ubuntu
     platform/windows
-    test/download_test_data
+    test/tests # defines CATKIN_ENABLE_TESTING, required by other test functions
+    test/catkin_download_test_data
     test/gtest
     test/nosetests
-    test/tests
     tools/doxygen
     tools/libraries
     tools/rt
@@ -139,6 +168,9 @@ _catkin_package_xml(${CMAKE_BINARY_DIR}/catkin/catkin_generated/version DIRECTOR
 message(STATUS "catkin ${catkin_VERSION}")
 # ensure that no current package name is set
 unset(_CATKIN_CURRENT_PACKAGE)
+
+# tools/libraries.cmake
+configure_shared_library_build_settings()
 
 # set global install destinations
 set(CATKIN_GLOBAL_BIN_DESTINATION bin)
@@ -179,13 +211,12 @@ configure_file(${catkin_EXTRAS_DIR}/templates/env.${script_ext}.in
 set(CATKIN_ENV ${SETUP_DIR}/env_cached.${script_ext} CACHE INTERNAL "catkin environment")
 
 # add additional environment hooks
-if(CATKIN_BUILD_BINARY_PACKAGE AND NOT "${PROJECT_NAME}" STREQUAL "catkin")
+if(NOT CATKIN_INSTALL_INTO_PREFIX_ROOT)
   set(catkin_skip_install_env_hooks "SKIP_INSTALL")
 endif()
-if(CMAKE_HOST_UNIX)
-  catkin_add_env_hooks(05.catkin-test-results SHELLS sh DIRECTORY ${catkin_EXTRAS_DIR}/env-hooks ${catkin_skip_install_env_hooks})
-else()
-  catkin_add_env_hooks(05.catkin-test-results SHELLS bat DIRECTORY ${catkin_EXTRAS_DIR}/env-hooks ${catkin_skip_install_env_hooks})
+if(CMAKE_HOST_UNIX AND PROJECT_NAME STREQUAL "catkin")
+  catkin_add_env_hooks(05.catkin_make SHELLS bash DIRECTORY ${catkin_EXTRAS_DIR}/env-hooks ${catkin_skip_install_env_hooks})
+  catkin_add_env_hooks(05.catkin_make_isolated SHELLS bash DIRECTORY ${catkin_EXTRAS_DIR}/env-hooks ${catkin_skip_install_env_hooks})
 endif()
 
 # requires stamp and environment files

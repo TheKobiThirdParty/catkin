@@ -33,14 +33,14 @@ class FindInWorkspaceTest(unittest.TestCase):
         self.assertRaises(ValueError, _get_valid_search_dirs, ['libexec'], None)
 
     def test_find_in_workspaces(self):
-        existing = find_in_workspaces([], _workspaces=None)
+        existing = find_in_workspaces([], _workspaces=[])
         self.assertEqual([], existing)
-        existing = find_in_workspaces([], 'foo', _workspaces=None)
+        existing = find_in_workspaces([], 'foo', _workspaces=[])
         self.assertEqual([], existing)
-        existing = find_in_workspaces([], 'foo', 'foopath', _workspaces=None)
+        existing = find_in_workspaces([], 'foo', 'foopath', _workspaces=[])
         self.assertEqual([], existing)
 
-        existing = find_in_workspaces(['include'], 'foo', 'foopath', _workspaces=None)
+        existing = find_in_workspaces(['include'], 'foo', 'foopath', _workspaces=[])
         self.assertEqual([], existing)
 
         checked = []
@@ -57,9 +57,11 @@ class FindInWorkspaceTest(unittest.TestCase):
         self.assertEqual(['bar/include/foo/foopath',
                           'bar/etc/foo/foopath',
                           'bar/lib/foo/foopath',
+                          'bar/libexec/foo/foopath',
                           'baz/include/foo/foopath',
                           'baz/etc/foo/foopath',
-                          'baz/lib/foo/foopath'], checked)
+                          'baz/lib/foo/foopath',
+                          'baz/libexec/foo/foopath'], checked)
         checked = []
         existing = find_in_workspaces(['share', 'etc', 'lib'], None, 'foopath', _workspaces=['bar', 'baz'], considered_paths=checked)
         self.assertEqual([], existing)

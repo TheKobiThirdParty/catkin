@@ -33,6 +33,7 @@
 # POSSIBILITY OF SUCH DAMAGE.
 
 from __future__ import print_function
+from collections import OrderedDict
 import sys
 import argparse
 
@@ -49,14 +50,26 @@ def _get_output(package):
     :param package: Package object
     :returns: list of str, lines to output
     """
-    values = {}
+    values = OrderedDict()
     values['VERSION'] = '"%s"' % package.version
 
     values['MAINTAINER'] = '"%s"' % (', '.join([str(m) for m in package.maintainers]))
 
-    values['BUILD_DEPENDS'] = ' '.join(['"%s"' % str(d) for d in package.build_depends])
-    values['BUILDTOOL_DEPENDS'] = ' '.join(['"%s"' % str(d) for d in package.buildtool_depends])
-    values['RUN_DEPENDS'] = ' '.join(['"%s"' % str(d) for d in package.run_depends])
+    values['PACKAGE_FORMAT'] = '"%d"' % package.package_format
+    values.update(_get_dependency_values('BUILD_DEPENDS', package.build_depends))
+    values.update(_get_dependency_values('BUILD_EXPORT_DEPENDS', package.build_export_depends))
+    values.update(_get_dependency_values('BUILDTOOL_DEPENDS', package.buildtool_depends))
+    values.update(_get_dependency_values('BUILDTOOL_EXPORT_DEPENDS', package.buildtool_export_depends))
+    values.update(_get_dependency_values('EXEC_DEPENDS', package.exec_depends))
+    # the run dependencies are a convenience property to mimick format one like dependencies
+    # it contains the build export and exec_dependendcies
+    values.update(_get_dependency_values('RUN_DEPENDS', package.run_depends))
+    values.update(_get_dependency_values('TEST_DEPENDS', package.test_depends))
+    values.update(_get_dependency_values('DOC_DEPENDS', package.doc_depends))
+
+    for url_type in ['website', 'bugtracker', 'repository']:
+        values['URL_%s' % url_type.upper()] = '"%s"' % (', '.join(
+            [str(u) for u in package.urls if u.type == url_type]))
 
     deprecated = [e.content for e in package.exports if e.tagname == 'deprecated']
     values['DEPRECATED'] = '"%s"' % ((deprecated[0] if deprecated[0] else 'TRUE') if deprecated else '')
@@ -66,6 +79,17 @@ def _get_output(package):
     for k, v in values.items():
         output.append('set(%s_%s %s)' % (package.name, k, v))
     return output
+
+def _get_dependency_values(key, depends):
+    values = OrderedDict()
+    values[key] = ' '.join(['"%s"' % str(d) for d in depends])
+    for d in depends:
+        comparisons = ['version_lt', 'version_lte', 'version_eq', 'version_gte', 'version_gt']
+        for comp in comparisons:
+            value = getattr(d, comp, None)
+            if value is not None:
+                values['%s_%s_%s' % (key, str(d), comp.upper())] = '"%s"' % value
+    return values
 
 
 def main(argv=sys.argv[1:]):
@@ -78,8 +102,14 @@ def main(argv=sys.argv[1:]):
     args = parser.parse_args(argv)
     package = parse_package(args.package_xml)
 
+    # Force utf8 encoding for python3.
+    # This way unicode files can still be processed on non-unicode locales.
+    kwargs = {}
+    if sys.version_info.major >= 3:
+        kwargs['encoding'] = 'utf8'
+
     lines = _get_output(package)
-    with open(args.outfile, 'w') as ofile:
+    with open(args.outfile, 'w', **kwargs) as ofile:
         ofile.write('\n'.join(lines))
 
 
