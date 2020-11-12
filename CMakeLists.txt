@@ -21,8 +21,3 @@ install(DIRECTORY cmake
   PATTERN "catkinConfig.cmake.in" EXCLUDE)
 
 catkin_python_setup()
-
-if(CATKIN_ENABLE_TESTING)
-  catkin_add_nosetests(test/local_tests)
-  catkin_add_nosetests(test/unit_tests)
-endif()
